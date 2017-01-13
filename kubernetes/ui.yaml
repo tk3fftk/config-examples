@@ -1,0 +1,44 @@
+---
+# Screwdriver UI service definition
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdui
+  labels:
+    app: screwdriver
+    tier: ui
+spec:
+  # Define the service as a LoadBalancer
+  # https://kubernetes.io/docs/user-guide/services/#type-loadbalancer
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: screwdriver
+    tier: ui
+
+---
+# Screwdriver UI deployment definition
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: sdui
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: screwdriver
+        tier: ui
+    spec:
+      containers:
+      - name: screwdriver-ui
+        # Screwdriver API Docker image to use
+        # https://hub.docker.com/r/screwdrivercd/ui
+        image: screwdrivercd/ui:stable
+        ports:
+        - containerPort: 80
+        env:
+          - name: ECOSYSTEM_API
+            value: https://api.foo.bar

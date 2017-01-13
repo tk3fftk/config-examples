@@ -1,0 +1,128 @@
+---
+# Screwdriver API service definition
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdapi
+  labels:
+    app: screwdriver
+    tier: api
+spec:
+  # Define the service as a LoadBalancer
+  # https://kubernetes.io/docs/user-guide/services/#type-loadbalancer
+  type: LoadBalancer
+  ports:
+  - port: 80
+    name: http
+  selector:
+    app: screwdriver
+    tier: api
+
+---
+# Screwdriver API deployment definition
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: sdapi
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: screwdriver
+        tier: api
+    spec:
+      containers:
+      - name: screwdriver-api
+        # Screwdriver API Docker image to use
+        # https://hub.docker.com/r/screwdrivercd/screwdriver
+        image: screwdrivercd/screwdriver:stable
+        ports:
+        - containerPort: 80
+        # Validate that the service is started
+        livenessProbe:
+          httpGet:
+            path: /v4/status
+            port: 80
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        # Environment variables that point to your secrets in your secrets.yaml
+        env:
+          # You can set secrets directly using the format name/value
+          - name: DATASTORE_PLUGIN
+            value: sequelize
+          - name: LAUNCH_VERSION
+            value: stable
+          - name: LOG_VERSION
+            value: v0.0.9
+          - name: PORT
+            value: "80"
+          - name: URI
+            value: https://api.foo.bar
+          - name: ECOSYSTEM_UI
+            value: https://ui.foo.bar
+          - name: ECOSYSTEM_STORE
+            value: https://store.foo.bar
+          - name: IS_HTTPS
+            value: "true"
+          # Or you can use secrets as environment variables in pods:
+          # https://kubernetes.io/docs/user-guide/secrets/#using-secrets-as-environment-variables
+          - name: K8S_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: sd-build-token-12abc     # insert your Kubernetes <DEFAULT_TOKEN_NAME> here
+                key: token
+          - name: WEBHOOK_GITHUB_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: secrets
+                key: githubsecret
+          - name: SECRET_JWT_PRIVATE_KEY
+            valueFrom:
+              secretKeyRef:
+                name: secrets
+                key: jwtprivatekey
+          - name: SECRET_JWT_PUBLIC_KEY
+            valueFrom:
+              secretKeyRef:
+                name: secrets
+                key: jwtpublickey
+          - name: SECRET_OAUTH_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: secrets
+                key: oauthclientid
+          - name: SECRET_OAUTH_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: secrets
+                key: oauthclientsecret
+          - name: SECRET_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: secrets
+                key: password
+          - name: DATASTORE_SEQUELIZE_DATABASE
+            value: mydatabase
+          - name: DATASTORE_SEQUELIZE_DIALECT
+            value: postgres
+          - name: DATASTORE_SEQUELIZE_HOST
+            valueFrom:
+              secretKeyRef:
+                key: dbhost
+                name: secrets
+          - name: DATASTORE_SEQUELIZE_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: dbpassword
+                name: secrets
+          - name: DATASTORE_SEQUELIZE_PORT
+            value: "5432"
+          - name: DATASTORE_SEQUELIZE_USERNAME
+            valueFrom:
+              secretKeyRef:
+                key: dbusername
+                name: secrets
+          # optional prefix for tables in database
+          - name: DATASTORE_SEQUELIZE_PREFIX
+            value: test_
