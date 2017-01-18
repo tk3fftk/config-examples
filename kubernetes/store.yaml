@@ -1,0 +1,71 @@
+---
+# Screwdriver Artifact Store service definition
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdstore
+  labels:
+    app: screwdriver
+    tier: store
+spec:
+  # Define the service as a LoadBalancer
+  # https://kubernetes.io/docs/user-guide/services/#type-loadbalancer
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: screwdriver
+    tier: store
+
+---
+# Screwdriver Artifact Store deployment definition
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: sdstore
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: screwdriver
+        tier: store
+    spec:
+      containers:
+      - name: screwdriver-store
+        # Screwdriver API Docker image to use
+        # https://hub.docker.com/r/screwdrivercd/store
+        image: screwdrivercd/store:stable
+        ports:
+        - containerPort: 80
+        # Environment variables that point to your secrets in your secrets.yaml
+        env:
+          - name: S3_REGION
+            value: us-west-2
+          - name: S3_BUCKET
+            value: logs-bucket
+          - name: STRATEGY
+            value: s3
+          # 90 day expiration of logs
+          - name: BUILDS_EXPIRE_TIME
+            value: "7776000000"
+          - name: URI
+            value: http://store.foo.bar
+          # Or you can use secrets as environment variables in pods:
+          # https://kubernetes.io/docs/user-guide/secrets/#using-secrets-as-environment-variables
+          - name: SECRET_JWT_PUBLIC_KEY
+            valueFrom:
+              secretKeyRef:
+                name: secrets
+                key: jwtpublickey
+          - name: S3_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: secrets
+                key: keyid
+          - name: S3_ACCESS_KEY_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: secrets
+                key: accesskey
