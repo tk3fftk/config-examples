@@ -4,125 +4,158 @@ apiVersion: v1
 kind: Service
 metadata:
   name: sdapi
+  namespace: default
   labels:
     app: screwdriver
     tier: api
 spec:
-  # Define the service as a LoadBalancer
-  # https://kubernetes.io/docs/user-guide/services/#type-loadbalancer
-  type: LoadBalancer
+  type: NodePort
   ports:
   - port: 80
-    name: http
+    targetPort: 80
+    protocol: TCP
   selector:
     app: screwdriver
     tier: api
 
 ---
 # Screwdriver API deployment definition
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1beta2
 kind: Deployment
 metadata:
   name: sdapi
+  namespace: default
 spec:
-  replicas: 2
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: screwdriver
+      tier: api
   template:
     metadata:
       labels:
         app: screwdriver
         tier: api
     spec:
+      serviceAccount: sd-build
+      volumes:
+        - name: cloudsql-instance-credentials
+          secret:
+            secretName: cloudsql-instance-credentials
+        - name: ssl-certs
+          hostPath:
+            path: /etc/ssl/certs
+        - name: cloudsql
+          emptyDir: {}
       containers:
-      - name: screwdriver-api
-        # Screwdriver API Docker image to use
-        # https://hub.docker.com/r/screwdrivercd/screwdriver
-        image: screwdrivercd/screwdriver:stable
-        ports:
-        - containerPort: 80
-        # Validate that the service is started
-        livenessProbe:
-          httpGet:
-            path: /v4/status
-            port: 80
-          initialDelaySeconds: 15
-          timeoutSeconds: 1
-        # Environment variables that point to your secrets in your secrets.yaml
-        env:
-          # You can set secrets directly using the format name/value
-          - name: DATASTORE_PLUGIN
-            value: sequelize
-          - name: LAUNCH_VERSION
-            value: stable
-          - name: LOG_VERSION
-            value: v0.0.9
-          - name: PORT
-            value: "80"
-          - name: URI
-            value: https://api.foo.bar
-          - name: ECOSYSTEM_UI
-            value: https://ui.foo.bar
-          - name: ECOSYSTEM_STORE
-            value: https://store.foo.bar
-          - name: IS_HTTPS
-            value: "true"
-          # Or you can use secrets as environment variables in pods:
-          # https://kubernetes.io/docs/user-guide/secrets/#using-secrets-as-environment-variables
-          - name: K8S_TOKEN
-            valueFrom:
-              secretKeyRef:
-                name: sd-build-token-12abc     # insert your Kubernetes <DEFAULT_TOKEN_NAME> here
-                key: token
-          - name: WEBHOOK_GITHUB_SECRET
-            valueFrom:
-              secretKeyRef:
-                name: secrets
-                key: githubsecret
-          - name: SECRET_JWT_PRIVATE_KEY
-            valueFrom:
-              secretKeyRef:
-                name: secrets
-                key: jwtprivatekey
-          - name: SECRET_JWT_PUBLIC_KEY
-            valueFrom:
-              secretKeyRef:
-                name: secrets
-                key: jwtpublickey
-          - name: SECRET_OAUTH_CLIENT_ID
-            valueFrom:
-              secretKeyRef:
-                name: secrets
-                key: oauthclientid
-          - name: SECRET_OAUTH_CLIENT_SECRET
-            valueFrom:
-              secretKeyRef:
-                name: secrets
-                key: oauthclientsecret
-          - name: SECRET_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: secrets
-                key: password
-          - name: DATASTORE_SEQUELIZE_DATABASE
-            value: mydatabase
-          - name: DATASTORE_SEQUELIZE_DIALECT
-            value: postgres
-          - name: DATASTORE_SEQUELIZE_HOST
-            valueFrom:
-              secretKeyRef:
-                key: dbhost
-                name: secrets
-          - name: DATASTORE_SEQUELIZE_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                key: dbpassword
-                name: secrets
-          - name: DATASTORE_SEQUELIZE_PORT
-            value: "5432"
-          - name: DATASTORE_SEQUELIZE_USERNAME
-            valueFrom:
-              secretKeyRef:
-                key: dbusername
-                name: secrets
-          # optional prefix for tables in database
-          - name: DATASTORE_SEQUELIZE_PREFIX
-            value: test_
+      # coludsql proxy container settings
+        - name: cloudsql-proxy
+          image: gcr.io/cloudsql-docker/gce-proxy:1.11
+          command: ["/cloud_sql_proxy",
+                    "--dir=/cloudsql",
+                    "-instances=<INSTANCE_CONNECTION_NAME>=tcp:3306", # TODO: change instances to your INSTANCE_CONNECTION_NAME
+                    "-credential_file=/secrets/cloudsql/credentials.json"]
+          volumeMounts:
+            - name: cloudsql-instance-credentials
+              mountPath: /secrets/cloudsql
+              readOnly: true
+            - name: ssl-certs
+              mountPath: /etc/ssl/certs
+            - name: cloudsql
+              mountPath: /cloudsql
+        # screwdriver api container settings
+        - name: screwdriver-api
+          image: screwdrivercd/screwdriver:v0.5.185
+          ports:
+          - containerPort: 80
+          # Validate that the service is started
+          livenessProbe:
+            httpGet:
+              path: /v4/status
+              port: 80
+            initialDelaySeconds: 15
+            timeoutSeconds: 1
+          readinessProbe:
+            httpGet:
+              path: /v4/status
+              port: 80
+            initialDelaySeconds: 15
+            timeoutSeconds: 1
+          # Environment variables that point to your secrets in your secrets.yaml
+          env:
+            - name: DATASTORE_PLUGIN
+              value: sequelize
+            - name: DATASTORE_SEQUELIZE_DIALECT
+              value: mysql
+            - name: DATASTORE_SEQUELIZE_HOST
+              value: 127.0.0.1
+            - name: DATASTORE_SEQUELIZE_DATABASE
+              value: screwdriver # TODO: change this to your database name
+            - name: DATASTORE_SEQUELIZE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: cloudsql-db-credentials
+            - name: DATASTORE_SEQUELIZE_PORT
+              value: "3306"
+            - name: EXECUTOR_PLUGIN
+              value: "k8s"
+            - name: K8S_JOBS_NAMESPACE
+              value: "default"
+            - name: K8S_CPU_LOW
+              value: "0.5"
+            - name: K8S_MEMORY_LOW
+              value: "0.5"
+            - name: K8S_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sd-build-token-ffm4q # TODO: change sd-build-token to your sd-build-token
+                  key: token
+            - name: LAUNCH_VERSION
+              value: latest
+            - name: LOG_VERSION
+              value: latest 
+            - name: PORT
+              value: "80"
+            - name: URI
+              value: http://35.190.82.21 # TODO: change ip address to your ingress ip address
+            - name: ECOSYSTEM_UI
+              value: http://35.190.82.21 # TODO: change ip address to your ingress ip address
+            - name: ECOSYSTEM_STORE
+              value: http://35.190.82.21 # TODO: change ip address to your ingress ip address
+            - name: IS_HTTPS
+              value: "false"
+            - name: SECRET_WHITELIST
+              value: "[]"
+            - name: SECRET_ADMINS
+              value: "[]"
+            - name: SECRET_COOKIE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sd-secrets
+                  key: cookie_pass
+            - name: SECRET_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sd-secrets
+                  key: encryption_pass
+            - name: SECRET_JWT_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sd-secrets
+                  key: jwt_private
+            - name: SECRET_JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sd-secrets
+                  key: jwt_public
+            - name: SCM_SETTINGS
+              valueFrom:
+                secretKeyRef:
+                  name: sd-secrets
+                  key: scm_settings

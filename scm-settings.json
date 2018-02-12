@@ -1,0 +1,12 @@
+{
+    "github.com": {
+        "plugin": "github",
+        "config": {
+            "secret": "SUPER-SECRET-SIGNING-THING",
+            "oauthClientSecret": "YOUR-OAUTH-CLIENT-SECRET",
+            "oauthClientId": "YOUR-OAUTH-CLIENTID",
+            "username": "sd-buildbot",
+            "email": "dev-null@screwdriver.cd"
+        }
+    }
+}
