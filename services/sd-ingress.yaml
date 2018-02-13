@@ -1,0 +1,21 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: sd-ingress
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /v4/*
+        backend:
+          serviceName: sdapi
+          servicePort: 80
+      - path: /v1/*
+        backend:
+          serviceName: sdstore
+          servicePort: 80
+      - path: /*
+        backend:
+          serviceName: sdui
+          servicePort: 80
+
